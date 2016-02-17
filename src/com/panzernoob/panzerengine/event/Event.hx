@@ -1,6 +1,5 @@
 package com.panzernoob.panzerengine.event;
 
-import com.panzernoob.plugins.time.Time;
 import haxe.rtti.Meta;
 class Event implements IEvent
 {
@@ -11,7 +10,7 @@ class Event implements IEvent
 	public function new (pType: String)
 	{
 		type = pType;
-		timeStamp = Time.timeStamp;
+//		timeStamp = Time.timeStamp;
 	}
 
 	private function formatToString (pArgs:Array<String>): String

@@ -1,20 +1,22 @@
-package com.panzernoob.panzerengine.gameobjects;
-import com.panzernoob.panzerengine.utils.Utils;
+package com.panzernoob.panzerengine.core.gameobject;
+
+import com.panzernoob.panzerengine.compositing.*;
 import com.panzernoob.panzerengine.event.IEvent;
-import com.panzernoob.panzerengine.event.EventDispatcher;
 import com.panzernoob.panzerengine.event.IEventDispatcher;
+import com.panzernoob.panzerengine.utils.Utils;
+import com.panzernoob.panzerengine.event.EventDispatcher;
 import pixi.core.graphics.Graphics;
+import pixi.core.display.Container;
 import pixi.core.display.DisplayObject;
 import pixi.core.math.Point;
-import pixi.core.display.Container;
 
 using StringTools;
 
-class GameObject extends Container implements IEventDispatcher
+class GameObject extends Container implements IEventDispatcher implements ICompositable
 {
-	/***********************
-	* Static Utils Methods *
-	***********************/
+	/********************
+	* Static Definition *
+	********************/
 	public static var list		:Array<GameObject> 				= new Array<GameObject>();
 	public static var tagList	:Map<String,Array<GameObject>> 	= new Map<String,Array<GameObject>>();
 
@@ -33,6 +35,11 @@ class GameObject extends Container implements IEventDispatcher
 			return GetAbsolutePosition(pElement.parent, pPoint);
 		else
 			return pPoint;
+	}
+
+	public static function IsAttachedToStage(pGameObject:GameObject):Bool
+	{
+		return pGameObject.isAttachedToStage;
 	}
 
 	public static function FindGameObjectByName(pName:String):GameObject
@@ -58,10 +65,12 @@ class GameObject extends Container implements IEventDispatcher
 	/**********************
 	* Instance Definition *
 	**********************/
-	private var eventDispatcher		:IEventDispatcher;
+	private var eventDispatcher							:IEventDispatcher;
+	@:allow(GameObject) private var isAttachedToStage	:Bool = false;
 
-	public var anchor				:Point 		= new Point(0,0);
-	public var tag(default,set)		:String;
+	@:isVar public var tag(default,set)	:String;
+	public var anchor					:Point = new Point(0,0);
+	public var components				:ClassMap<Class<IComponent>,IComponent>;
 
 	public function new (?pName:String, ?pTag:String)
 	{
@@ -76,6 +85,20 @@ class GameObject extends Container implements IEventDispatcher
 	/*************************
 	* Instance Utils Methods *
 	*************************/
+	private function reverbateSetAnchor(pChild:DisplayObject):Void
+	{
+		if(Std.is(pChild, GameObject))
+		{
+			cast(pChild, GameObject).setAnchor(anchor.x, anchor.y);
+		}
+		else if(Std.is(pChild, Graphics))
+		{
+			var lGraph:Graphics = cast(pChild, Graphics);
+			lGraph.position.x 	= -lGraph.width 	* anchor.x;
+			lGraph.position.y 	= -lGraph.height 	* anchor.y;
+		}
+	}
+
 	public function setName(?pName:String): GameObject
 	{
 		name = (pName != null) ? pName : Utils.getClassName(this)+"_%NUMBER%";
@@ -96,34 +119,39 @@ class GameObject extends Container implements IEventDispatcher
 
 		for(i in 0...children.length)
 		{
-			var lChild:DisplayObject = children[i];
-			if(Std.is(lChild, GameObject))
-			{
-				cast(lChild, GameObject).setAnchor(pX, pY);
-			}
-			else if(Std.is(lChild, Graphics))
-			{
-				var lGraph:Graphics = cast(lChild, Graphics);
-				lGraph.position.x 	= -lGraph.width 	* anchor.x;
-				lGraph.position.y 	= -lGraph.height 	* anchor.y;
-			}
+			reverbateSetAnchor(children[i]);
 		}
 
 		return anchor;
 	}
 
+	/****************************
+	* Instance override Methods *
+	****************************/
+	override public function addChild(pChild:DisplayObject):DisplayObject
+	{
+		reverbateSetAnchor(pChild);
+		return super.addChild(pChild);
+	}
+
 	/***************************
 	* Instance Getters/Setters *
 	***************************/
-	private function set_tag(value:String):String
-	{
-		tag = value;
-
+	private function set_tag(value:String) {
+		// Remove the object from the previous tag list
+		if(tagList.exists(tag))
+		{
+			var lTagList:Array<GameObject> = tagList.get(tag);
+			lTagList.splice(lTagList.indexOf(this), 1);
+		}
+		// Create the new tag list if not existing
 		if(!tagList.exists(value))
 			tagList.set(value, new Array<GameObject>());
+		// Add the object to the tag list
 		var lList:Array<GameObject> = tagList.get(value);
 		lList.push(this);
 
+		tag = value;
 		return tag;
 	}
 
@@ -135,7 +163,7 @@ class GameObject extends Container implements IEventDispatcher
 		return eventDispatcher.has(pType, pListener);
 	}
 
-	public function register<T:(IEvent)> (pType:String, pListener:T->Void, pOnce:Bool):Void
+	public function register<T:(IEvent)> (pType:String, pListener:T->Void, ?pOnce:Bool):Void
 	{
 		eventDispatcher.register(pType, pListener, pOnce);
 	}
@@ -150,4 +178,23 @@ class GameObject extends Container implements IEventDispatcher
 		eventDispatcher.dispatch(pEvent);
 	}
 
+	public function addComponent<T:IComponent>(pComponent:Class<T>, pParams:Array<Dynamic>):T
+	{
+		pParams = pParams != null ? pParams : new Array<Dynamic>();
+		var lComponent:IComponent = Type.createInstance(pComponent, pParams);
+		lComponent.attach(this);
+		return cast(lComponent);
+	}
+
+	public function removeComponent<T:IComponent>(pComponent:Class<T>, pSearchInChildren:Bool = false):Void
+	{
+		var lComponent:IComponent = components.get(cast(pComponent));
+
+		if(lComponent == null && pSearchInChildren)
+		{
+			// TODO : implement search in super classes if the component is inside
+		}
+
+		if(lComponent != null) lComponent.detach();
+	}
 }
